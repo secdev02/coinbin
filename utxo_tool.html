@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>UTXO Fetcher</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2rem; background-color: #f9f9f9; }
+    input[type="text"] { width: 400px; padding: 0.5rem; }
+    button { padding: 0.5rem 1rem; margin-left: 0.5rem; }
+    .utxo { border: 1px solid #ddd; padding: 1rem; margin: 1rem 0; background-color: #fff; }
+    .error { color: red; }
+  </style>
+</head>
+<body>
+
+  <h2>Bitcoin UTXO Fetcher</h2>
+  <p>Enter a Bitcoin address to list unspent outputs (UTXOs):</p>
+
+  <input type="text" id="addressInput" placeholder="Enter Bitcoin address">
+  <button onclick="fetchUTXOs()">Get UTXOs</button>
+
+  <div id="results"></div>
+
+  <script>
+    async function fetchUTXOs() {
+      const address = document.getElementById('addressInput').value.trim();
+      const resultsDiv = document.getElementById('results');
+      resultsDiv.innerHTML = '';
+
+      if (!address) {
+        resultsDiv.innerHTML = '<p class="error">Please enter a Bitcoin address.</p>';
+        return;
+      }
+
+      const apiUrl = `https://blockstream.info/api/address/${address}/utxo`;
+
+      try {
+        const response = await fetch(apiUrl);
+        if (!response.ok) {
+          throw new Error(`HTTP error ${response.status}`);
+        }
+
+        const utxos = await response.json();
+
+        if (utxos.length === 0) {
+          resultsDiv.innerHTML = `<p>No UTXOs found for address: ${address}</p>`;
+          return;
+        }
+
+        utxos.forEach((utxo, i) => {
+          const div = document.createElement('div');
+          div.className = 'utxo';
+          div.innerHTML = `
+            <strong>UTXO #${i + 1}</strong><br>
+            <b>TXID:</b> ${utxo.txid}<br>
+            <b>VOUT (index):</b> ${utxo.vout}<br>
+            <b>Amount (sats):</b> ${utxo.value}<br>
+            <b>Status:</b> ${utxo.status.confirmed ? "Confirmed" : "Unconfirmed"}<br>
+            <b>Block Height:</b> ${utxo.status.block_height || "N/A"}
+          `;
+          resultsDiv.appendChild(div);
+        });
+      } catch (err) {
+        resultsDiv.innerHTML = `<p class="error">Failed to fetch UTXOs: ${err.message}</p>`;
+      }
+    }
+  </script>
+
+</body>
+</html>
