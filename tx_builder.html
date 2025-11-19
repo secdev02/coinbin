@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Bitcoin Transaction Builder</title>
+  <script src="https://unpkg.com/bitcoinjs-lib@6.1.0"></script>
+  <style>
+    body { font-family: sans-serif; padding: 2rem; background-color: #f7f7f7; }
+    input, button, textarea { width: 100%; margin: 0.5rem 0; padding: 0.5rem; }
+    label { font-weight: bold; display: block; margin-top: 1rem; }
+    textarea { height: 150px; font-family: monospace; }
+  </style>
+</head>
+<body>
+  <h2>Bitcoin Raw Transaction Builder (Unsigned)</h2>
+
+  <label>Your Address (P2WPKH or P2TR):</label>
+  <input type="text" id="fromAddress" placeholder="e.g., bc1...">
+
+  <label>Recipient Address:</label>
+  <input type="text" id="toAddress" placeholder="e.g., bc1...">
+
+  <label>Amount to Send (in sats):</label>
+  <input type="number" id="sendAmount" placeholder="e.g., 50000">
+
+  <label>Fee Rate (sats/vB):</label>
+  <input type="number" id="feeRate" value="5">
+
+  <button onclick="buildTransaction()">Build Transaction</button>
+
+  <label>Unsigned Raw Transaction (Hex):</label>
+  <textarea id="rawTxHex" readonly></textarea>
+
+  <script>
+    async function buildTransaction() {
+      const address = document.getElementById("fromAddress").value.trim();
+      const toAddress = document.getElementById("toAddress").value.trim();
+      const amountToSend = parseInt(document.getElementById("sendAmount").value);
+      const feeRate = parseInt(document.getElementById("feeRate").value);
+      const outputField = document.getElementById("rawTxHex");
+      outputField.value = "";
+
+      if (!address || !toAddress || !amountToSend || !feeRate) {
+        alert("All fields must be filled correctly.");
+        return;
+      }
+
+      const apiUrl = `https://blockstream.info/api/address/${address}/utxo`;
+      const res = await fetch(apiUrl);
+      const utxos = await res.json();
+
+      if (!utxos.length) {
+        alert("No UTXOs found for this address.");
+        return;
+      }
+
+      const psbt = new bitcoinjs.Psbt({ network: bitcoinjs.networks.bitcoin });
+
+      let totalInput = 0;
+      for (const utxo of utxos) {
+        const txHex = await (await fetch(`https://blockstream.info/api/tx/${utxo.txid}/hex`)).text();
+
+        psbt.addInput({
+          hash: utxo.txid,
+          index: utxo.vout,
+          witnessUtxo: {
+            script: bitcoinjs.address.toOutputScript(address),
+            value: utxo.value
+          },
+          nonWitnessUtxo: Buffer.from(txHex, 'hex') // optional for SegWit, but useful for signing
+        });
+
+        totalInput += utxo.value;
+        if (totalInput >= amountToSend + 200 * feeRate) break; // crude fee estimation
+      }
+
+      const feeEstimate = 180 * psbt.inputCount + 34 * 2 + 10; // vBytes estimate
+      const fee = Math.ceil(feeEstimate * feeRate);
+      const change = totalInput - amountToSend - fee;
+
+      if (change < 0) {
+        alert("Not enough funds (including fee).");
+        return;
+      }
+
+      psbt.addOutput({ address: toAddress, value: amountToSend });
+      if (change > 546) {
+        psbt.addOutput({ address: address, value: change }); // send change back
+      }
+
+      const txHex = psbt.extractTransaction().toHex();
+      outputField.value = txHex;
+    }
+  </script>
+</body>
+</html>
